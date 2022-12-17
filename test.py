@@ -1,32 +1,34 @@
-import urllib.request, urllib.parse, urllib.error
-import json
-TWITTER_URL = 'https://api.twitter.com/1.1/friends/list.json'
+import sqlite3
 
-# Ignore SSL certificate errors
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
+conn = sqlite3.connect('emaildb.sqlite')
+cur = conn.cursor()
 
-while True:
-    print('')
-    acct = input('Enter Twitter Account:')
-    if (len(acct) < 1): break
-    url = twurl.augment(TWITTER_URL,
-                        {'screen_name': acct, 'count': '5'})
-    print('Retrieving', url)
-    connection = urllib.request.urlopen(url, context=ctx)
-    data = connection.read().decode()
+cur.execute('DROP TABLE IF EXISTS Counts')
 
-    js = json.loads(data)
-    print(json.dumps(js, indent=2))
+cur.execute('''
+CREATE TABLE Counts (email TEXT, count INTEGER)''')
 
-    headers = dict(connection.getheaders())
-    print('Remaining', headers['x-rate-limit-remaining'])
+fname = input('Enter file name: ')
+if (len(fname) < 1): fname = 'mbox-short.txt'
+fh = open(fname)
+for line in fh:
+    if not line.startswith('From: '): continue
+    pieces = line.split()
+    email = pieces[1]
+    cur.execute('SELECT count FROM Counts WHERE email = ? ', (email,))
+    row = cur.fetchone()
+    if row is None:
+        cur.execute('''INSERT INTO Counts (email, count)
+                VALUES (?, 1)''', (email,))
+    else:
+        cur.execute('UPDATE Counts SET count = count + 1 WHERE email = ?',
+                    (email,))
+    conn.commit()
 
-    for u in js['users']:
-        print(u['screen_name'])
-        if 'status' not in u:
-            print('   * No status found')
-            continue
-        s = u['status']['text']
-        print('  ', s[:50])
+# https://www.sqlite.org/lang_select.html
+sqlstr = 'SELECT email, count FROM Counts ORDER BY count DESC LIMIT 10'
+
+for row in cur.execute(sqlstr):
+    print(str(row[0]), row[1])
+
+cur.close()
